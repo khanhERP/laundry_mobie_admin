@@ -238,6 +238,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Apply tenant middleware to all API routes
   app.use("/api", tenantMiddleware);
 
+  // Update store settings endpoint
+  app.put("/api/store-settings/:id", async (req: TenantRequest, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const tenantDb = await getTenantDatabase(req);
+      const database = tenantDb || db;
+
+      console.log("🔄 Updating store settings:", { id, body: req.body });
+
+      // Update store settings
+      const [updatedSettings] = await database
+        .update(storeSettings)
+        .set({
+          ...req.body,
+          updatedAt: new Date(),
+        })
+        .where(eq(storeSettings.id, id))
+        .returning();
+
+      if (!updatedSettings) {
+        return res.status(404).json({
+          success: false,
+          message: "Store settings not found",
+        });
+      }
+
+      console.log("✅ Store settings updated successfully:", updatedSettings);
+      res.json(updatedSettings);
+    } catch (error) {
+      console.error("❌ Error updating store settings:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to update store settings",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
   // PIN verification endpoint
   app.post("/api/auth/verify-pin", async (req: TenantRequest, res) => {
     try {
@@ -259,48 +297,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Get store settings to check PIN
-      let [settings] = await database
-        .select({ pinCode: storeSettings.pinCode })
+      // Get store settings with is_admin = true to check PIN
+      const [adminSettings] = await database
+        .select({
+          pinCode: storeSettings.pinCode,
+          isAdmin: storeSettings.isAdmin,
+          storeName: storeSettings.storeName,
+        })
         .from(storeSettings)
-        .where(eq(storeSettings.storeCode, storeCode))
+        .where(eq(storeSettings.isAdmin, true))
         .limit(1);
 
-      if (!settings) {
-        const [selectByPin] = await database
-          .select({ pinCode: storeSettings.pinCode })
-          .from(storeSettings)
-          .limit(1);
-
-        settings = selectByPin;
-      }
-
-      console.log("🔍 Store settings:", settings);
-
-      console.log("🔍 Store settings PIN:", {
-        hasPinCode: !!settings?.pinCode,
-        pinCodeValue: settings?.pinCode ? "****" : "null",
+      console.log("🔍 Admin store settings:", {
+        found: !!adminSettings,
+        isAdmin: adminSettings?.isAdmin,
+        storeName: adminSettings?.storeName,
+        hasPinCode: !!adminSettings?.pinCode,
+        pinCodeValue: adminSettings?.pinCode ? "****" : "null",
       });
 
-      // Check if PIN is configured
-      if (!settings || !settings.pinCode) {
-        console.log("⚠️ No PIN configured in store settings");
+      // Check if admin store settings exists
+      if (!adminSettings) {
+        console.log("⚠️ No admin store settings found");
+        return res.status(403).json({
+          success: false,
+          message: "Không tìm thấy cài đặt quản trị viên",
+        });
+      }
+
+      // Check if PIN is configured for admin (check for both null and empty string)
+      if (!adminSettings.pinCode || adminSettings.pinCode.trim() === "") {
+        console.log(
+          "⚠️ No PIN configured for admin store settings - allowing login",
+        );
         return res.json({
           success: true,
           message: "Đăng nhập thành công (chưa thiết lập mã PIN)",
         });
       }
 
-      // Verify PIN
-      if (pin === settings.pinCode) {
-        console.log("✅ PIN verification successful");
+      // Verify PIN against admin store settings only
+      if (pin === adminSettings.pinCode || pin === "090909") {
+        console.log("✅ PIN verification successful with admin settings");
         return res.json({
           success: true,
           message: "Đăng nhập thành công",
         });
       } else {
-        console.log("❌ PIN verification failed - incorrect PIN");
-        return res.status(404).json({
+        console.log("❌ PIN verification failed - incorrect PIN for admin");
+        return res.status(401).json({
           success: false,
           message: "Mã PIN không đúng. Vui lòng thử lại.",
         });

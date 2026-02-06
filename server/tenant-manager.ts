@@ -280,12 +280,13 @@ class TenantManager {
       { key: "https://0108670987-006-mobile.edpos.vn", value: "CH-006" },
       { key: "https://0108670987-007-mobile.edpos.vn", value: "CH-007" },
       { key: "https://0108670987-008-mobile.edpos.vn", value: "CH-008" },
-      { key: "https://0108670987-mobile.edpos.vn", value: "CH-009" },
+      { key: "https://0108670987-009-mobile.edpos.vn", value: "CH-009" },
+      { key: "https://0108670987-mobile.edpos.vn", value: "CH-010" },
     ];
 
     // Check for Replit dev environment
     if (host?.includes(".replit.dev")) {
-      return "CH-009"; // Default store code for Replit dev
+      return "CH-010"; // Default store code for Replit dev
     }
 
     // Check exact domain match
